@@ -1,8 +1,9 @@
 # MultiTok
-A simple Python script that downloads TikTok videos concurrently, with or without a watermark.
+A simple Python script that downloads TikTok videos and photos concurrently, with or without a watermark.
 
 ## Features
 * Concurrent downloading
+* Photo downloading
 * Watermark free videos
 * Watermarked videos
 * Supports all TikTok URL formats
