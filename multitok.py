@@ -5,6 +5,8 @@ import os
 from tqdm import tqdm
 from concurrent import futures
 import re
+import json
+import jmespath
 
 parser = argparse.ArgumentParser(description="Multitok: A simple script that downloads TikTok videos concurrently.")
 watermark_group = parser.add_mutually_exclusive_group()
@@ -13,9 +15,18 @@ watermark_group.add_argument("--no-watermark", action="store_true", help="Downlo
 watermark_group.add_argument("--watermark", action="store_true", help="Download videos with watermarks.")
 parser.add_argument("--workers", default=3, help="Number of concurrent downloads. (Default: 3)", type=int)
 parser.add_argument("--api-version", choices=['v1', 'v2'], default='v2', help="API version to use for downloading videos. (Default: v2)")
+parser.add_argument("--save-metadata", action="store_true", help="Write video metadata to file if specified.")
 args = parser.parse_args()
 
+headers = {
+'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+}
+
 def extract_video_id(url):
+    if 'vm.tiktok.com' in url:
+        response = requests.get(url, headers=headers)
+        url = response.url
+
     username_pattern = r"@([A-Za-z0-9_.]+)"
     content_type_pattern = r"/(video|photo)/(\d+)"
 
@@ -28,9 +39,35 @@ def extract_video_id(url):
 
     return username, video_id, content_type
 
+
+def extract_metadata(url):
+    response = requests.get(url, headers=headers)
+    html = Selector(response.text)
+    account_data = json.loads(html.xpath('//*[@id="__UNIVERSAL_DATA_FOR_REHYDRATION__"]/text()').get())
+    data = account_data["__DEFAULT_SCOPE__"]["webapp.video-detail"]["itemInfo"]["itemStruct"]
+
+    expression = """
+    {
+        id: id,
+        description: desc,
+        createTime: createTime,
+        video: video.{height: height, width: width, duration: duration, ratio: ratio, bitrate: bitrate, format: format, codecType: codecType, definition: definition},
+        author: author.{id: id, uniqueId: uniqueId, nickname: nickname, signature: signature},
+        music: music.{id: id, title: title, authorName: authorName, duration: duration},
+        stats: stats,
+        suggestedWords: suggestedWords,
+        diversificationLabels: diversificationLabels,
+        contents: contents[].{textExtra: textExtra[].{hashtagName: hashtagName}}
+    }
+    """
+
+    parsed_data = jmespath.search(expression, data)
+    return parsed_data
+
+
 def downloader(file_name, link, response, extension):
     file_size = int(response.headers.get("content-length", 0))
-    folder_name = extract_video_id(link)[0]
+    folder_name, _ , content_type = extract_video_id(link)
 
     if not os.path.exists(folder_name):
         os.mkdir(folder_name)
@@ -47,6 +84,18 @@ def downloader(file_name, link, response, extension):
             size = file.write(data)
             progress_bar.update(size)
 
+    if args.save_metadata and content_type != "photo":
+        path = f"{folder_name}/metadata"
+
+        if not os.path.exists(path):
+            os.mkdir(path)
+
+        metadata = extract_metadata(link)
+
+        with open(f'{path}/{file_name}.json', 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, indent=4, ensure_ascii=False)
+
+
 
 def download_v2(link):
     headers = {
@@ -58,9 +107,6 @@ def download_v2(link):
     'Referer': 'https://musicaldown.com/en?ref=more',
     }
 
-    if 'vm.tiktok.com' in link:
-        response = requests.get(link, headers=headers)
-        link = response.url
 
     _, file_name, content_type = extract_video_id(link)
 
@@ -115,10 +161,6 @@ def download_v1(link):
     'Referer': 'https://tmate.cc/',
     'Sec-Fetch-Site': 'same-origin',
     }
-
-    if 'vm.tiktok.com' in link:
-        response = requests.get(link, headers=headers)
-        link = response.url
 
     _, file_name, content_type = extract_video_id(link)
 
