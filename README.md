@@ -30,7 +30,9 @@ Step 4. Install requirements
 
 ## Available Options
 ```
-usage: app.py [-h] [--links LINKS] [--no-watermark | --watermark] [--workers WORKERS] [--api-version {v1,v2}] [--save-metadata]
+usage: multitok.py [-h] [--links LINKS] [--no-watermark | --watermark] [--workers WORKERS] [--api-version {v1,v2}] [--save-metadata] [--skip-existing] [--no-folders] [--output-dir OUTPUT_DIR]
+
+Multitok: A simple script that downloads TikTok videos concurrently.
 
 options:
   -h, --help            show this help message and exit
@@ -41,6 +43,10 @@ options:
   --api-version {v1,v2}
                         API version to use for downloading videos. (Default: v2)
   --save-metadata       Write video metadata to file if specified.
+  --skip-existing       Skip downloading videos that already exist.
+  --no-folders          Download all videos to the current directory without creating user folders.
+  --output-dir OUTPUT_DIR
+                        Specify the output directory for downloads. (Default: current directory)
 ```
 
 ## How To Use
@@ -71,8 +77,12 @@ Run the following commands according to how you want your videos to be downloade
 
 8. `python multitok.py --watermark --links example.txt --workers 4 --api-version v2 --save-metadata`: Downloads the watermarked version of the videos using links in the `example.txt` file and api v2. 4 videos are downloaded at a time and the metadata is saved into the metadata folder. 
 
+9. `python multitok.py --output-dir /home/ubuntu/example`: Videos will be downloaded into the `/home/ubuntu/example` directory.
+
+10. `python multitok.py --skip-existing --no-folders`: No user folders will be created and videos that have already being downloaded will be skipped.
+
 ### Note
-* A folder will be created for each unique user. This folder will contain the downloaded videos.
-* Videos that have been previously downloaded will be overwritten when the script is run again with the same links used.
+* A folder will be created for each unique user. This folder will contain the downloaded videos. Use `--no-folders` to download all videos to the current directory without creating user folders.
+* Videos that have been previously downloaded will be replaced when the script is run again. Use `--skip-existing` to skip downloading videos that already exist.
 * The videos are saved and renamed according to their video IDs.
 * Any link that had an error will be logged in an errors.txt file.
