@@ -16,6 +16,9 @@ watermark_group.add_argument("--watermark", action="store_true", help="Download 
 parser.add_argument("--workers", default=3, help="Number of concurrent downloads. (Default: 3)", type=int)
 parser.add_argument("--api-version", choices=['v1', 'v2'], default='v2', help="API version to use for downloading videos. (Default: v2)")
 parser.add_argument("--save-metadata", action="store_true", help="Write video metadata to file if specified.")
+parser.add_argument("--skip-existing", action="store_true", help="Skip downloading videos that already exist.")
+parser.add_argument("--no-folders", action="store_true", help="Download all videos to the current directory without creating user folders.")
+parser.add_argument("--output-dir", default=".", help="Specify the output directory for downloads. (Default: current directory)")
 args = parser.parse_args()
 
 headers = {
@@ -67,13 +70,24 @@ def extract_metadata(url):
 
 def downloader(file_name, link, response, extension):
     file_size = int(response.headers.get("content-length", 0))
-    folder_name, _ , content_type = extract_video_id(link)
+    username, _ , content_type = extract_video_id(link)
 
-    if not os.path.exists(folder_name):
-        os.mkdir(folder_name)
-        print(f"Folder created: {folder_name}\n")
+    if args.no_folders:
+        folder_name = args.output_dir
+        file_name = f"{username}_{file_name}"
+    else:
+        folder_name = os.path.join(args.output_dir, username)
+        if not os.path.exists(folder_name):
+            os.makedirs(folder_name)
+            print(f"Folder created: {folder_name}\n")
 
-    with open(f"{folder_name}/{file_name}.{extension}", 'wb') as file, tqdm(
+    file_path = os.path.join(folder_name, f"{file_name}.{extension}")
+    
+    if os.path.exists(file_path) and args.skip_existing:
+        print(f"\033[93mSkipping\033[0m: {file_name}.{extension} (already exists)")
+        return
+
+    with open(file_path, 'wb') as file, tqdm(
         total=file_size,
         unit='iB',
         unit_scale=True,
@@ -85,14 +99,18 @@ def downloader(file_name, link, response, extension):
             progress_bar.update(size)
 
     if args.save_metadata and content_type != "photo":
-        path = f"{folder_name}/metadata"
+        if args.no_folders:
+            metadata_path = os.path.join(args.output_dir, "metadata")
+        else:
+            metadata_path = os.path.join(folder_name, "metadata")
 
-        if not os.path.exists(path):
-            os.mkdir(path)
+        if not os.path.exists(metadata_path):
+            os.makedirs(metadata_path)
 
         metadata = extract_metadata(link)
 
-        with open(f'{path}/{file_name}.json', 'w', encoding='utf-8') as f:
+        metadata_file_path = os.path.join(metadata_path, f"{file_name}.json")
+        with open(metadata_file_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=4, ensure_ascii=False)
 
 
