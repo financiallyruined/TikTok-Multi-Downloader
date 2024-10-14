@@ -14,7 +14,7 @@ parser.add_argument("--links", default="links.txt", help="The path to the .txt f
 watermark_group.add_argument("--no-watermark", action="store_true", help="Download videos without watermarks. (Default)")
 watermark_group.add_argument("--watermark", action="store_true", help="Download videos with watermarks.")
 parser.add_argument("--workers", default=3, help="Number of concurrent downloads. (Default: 3)", type=int)
-parser.add_argument("--api-version", choices=['v1', 'v2'], default='v2', help="API version to use for downloading videos. (Default: v2)")
+parser.add_argument("--api-version", choices=['v1', 'v2', 'v3'], default='v2', help="API version to use for downloading videos. (Default: v2)")
 parser.add_argument("--save-metadata", action="store_true", help="Write video metadata to file if specified.")
 parser.add_argument("--skip-existing", action="store_true", help="Skip downloading videos that already exist.")
 parser.add_argument("--no-folders", action="store_true", help="Download all videos to the current directory without creating user folders.")
@@ -48,6 +48,8 @@ def extract_metadata(url):
     html = Selector(response.text)
     account_data = json.loads(html.xpath('//*[@id="__UNIVERSAL_DATA_FOR_REHYDRATION__"]/text()').get())
     data = account_data["__DEFAULT_SCOPE__"]["webapp.video-detail"]["itemInfo"]["itemStruct"]
+
+    print(data)
 
     expression = """
     {
@@ -113,7 +115,59 @@ def downloader(file_name, link, response, extension):
         with open(metadata_file_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=4, ensure_ascii=False)
 
+def download_v3(link):
+    headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0',
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'HX-Request': 'true',
+    'HX-Trigger': 'search-btn',
+    'HX-Target': 'tiktok-parse-result',
+    'HX-Current-URL': 'https://tiktokio.com/',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Origin': 'https://tiktokio.com',
+    'Connection': 'keep-alive',
+    'Referer': 'https://tiktokio.com/'
+    }
 
+
+    _, file_name, content_type = extract_video_id(link)
+
+    with requests.Session() as s:
+        try:
+            r = s.get("https://tiktokio.com/", headers=headers)
+
+            selector = Selector(text=r.text)
+
+            prefix = selector.css('input[name="prefix"]::attr(value)').get()
+
+            data = {
+                'prefix': prefix,
+                'vid': link,
+            }
+
+            response = requests.post('https://tiktokio.com/api/v1/tk-htmx', headers=headers, data=data)
+
+            selector = Selector(text=response.text)
+
+            if content_type == "video":
+                download_link_index = 2 if args.watermark else 0
+                download_link = selector.css('div.tk-down-link a::attr(href)').getall()[download_link_index]
+
+                response = s.get(download_link, stream=True, headers=headers)
+
+                downloader(file_name, link, response, extension="mp4")
+            else:
+                download_links = selector.xpath('//div[@class="media-box"]/img/@src').getall()
+                
+                for index, download_link in enumerate(download_links):
+                    response = s.get(download_link, stream=True, headers=headers)
+                    downloader(f"{file_name}_{index}", link, response, extension="jpeg")
+
+        except Exception as e:
+            print(f"\033[91merror\033[0m: {link} - {str(e)}")
+            with open("errors.txt", 'a') as error_file:
+                error_file.write(link + "\n")
 
 def download_v2(link):
     headers = {
@@ -149,10 +203,11 @@ def download_v2(link):
             selector = Selector(text=response.text)
 
             if content_type == "video":
-                watermark = selector.xpath('/html/body/div[2]/div/div[3]/div[2]/a[4]/@href').get()
-                no_watermark = selector.xpath('/html/body/div[2]/div/div[3]/div[2]/a[1]/@href').get()
+                watermark = selector.xpath('/html/body/div[2]/div/div[2]/div[2]/a[3]/@href').get()
+                no_watermark = selector.xpath('/html/body/div[2]/div/div[2]/div[2]/a[1]/@href').get()
 
                 download_link = watermark if args.watermark else no_watermark
+                print(download_link)
 
                 response = s.get(download_link, stream=True, headers=headers)
 
@@ -195,7 +250,7 @@ def download_v1(link):
             selector = Selector(text=response)
 
             if content_type == "video":
-                download_link_index = 3 if args.watermark else 0
+                download_link_index = 2 if args.watermark else 0
                 download_link = selector.css('.downtmate-right.is-desktop-only.right a::attr(href)').getall()[download_link_index]
 
                 response = s.get(download_link, stream=True, headers=headers)
@@ -218,8 +273,14 @@ if __name__ == "__main__":
     with open(args.links, "r") as links:
         tiktok_links = links.read().strip().split("\n")
 
-    with futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
-        if args.api_version == 'v2':
-            executor.map(download_v2, tiktok_links)
-        elif args.api_version == 'v1':
-            executor.map(download_v1, tiktok_links)
+    download_functions = {
+        'v1': download_v1,
+        'v2': download_v2,
+        'v3': download_v3,
+    }
+
+    download_function = download_functions.get(args.api_version)
+
+    if download_function:
+        with futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
+            executor.map(download_function, tiktok_links)
