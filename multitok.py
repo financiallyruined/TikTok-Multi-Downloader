@@ -49,7 +49,7 @@ def extract_metadata(url):
     account_data = json.loads(html.xpath('//*[@id="__UNIVERSAL_DATA_FOR_REHYDRATION__"]/text()').get())
     data = account_data["__DEFAULT_SCOPE__"]["webapp.video-detail"]["itemInfo"]["itemStruct"]
 
-    print(data)
+    #print(data)
 
     expression = """
     {
@@ -207,7 +207,6 @@ def download_v2(link):
                 no_watermark = selector.xpath('/html/body/div[2]/div/div[2]/div[2]/a[1]/@href').get()
 
                 download_link = watermark if args.watermark else no_watermark
-                print(download_link)
 
                 response = s.get(download_link, stream=True, headers=headers)
 
